@@ -1,53 +1,171 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>My Dashboard</title>
+    <title>Combo Validation Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+
     <style>
-        body {
-            font-family: Arial;
-            text-align: center;
-            background: #f5f5f5;
-        }
-        .card {
-            background: white;
-            padding: 20px;
-            margin: 10px;
-            display: inline-block;
-            border-radius: 10px;
-        }
+        body { font-family: Arial; background:#f5f5f5; text-align:center; }
+        .card { background:white; padding:15px; margin:10px; display:inline-block; border-radius:10px; }
+        table { margin:auto; border-collapse: collapse; width:90%; background:white; }
+        th, td { border:1px solid #ddd; padding:8px; }
+        th { background:#333; color:white; }
+        button { padding:10px; margin:10px; }
     </style>
 </head>
+
 <body>
 
-    <h1>📊 My First Dashboard</h1>
+<h1>📊 Combo Validation Dashboard</h1>
 
-    <div class="card">
-        <h2>Total Sales</h2>
-        <p>₹ 25,000</p>
-    </div>
+<input type="file" id="fileInput" accept=".csv">
+<button onclick="downloadCSV()">Download Results</button>
 
-    <div class="card">
-        <h2>Orders</h2>
-        <p>120</p>
-    </div>
+<div class="card"><h3>Homogenous</h3><p id="homo">0</p></div>
+<div class="card"><h3>Heterogenous</h3><p id="hetero">0</p></div>
+<div class="card"><h3>Regular</h3><p id="regular">0</p></div>
 
-    <canvas id="myChart"></canvas>
+<canvas id="chart"></canvas>
 
-    <script>
-        const ctx = document.getElementById('myChart');
+<table id="outputTable">
+<thead>
+<tr>
+<th>Item Code</th>
+<th>Spin Type</th>
+<th>Q_UOM</th>
+<th>Pack Size</th>
+<th>Pack Size Match</th>
+<th>Unique Combo</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
 
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: ['Jan', 'Feb', 'Mar'],
-                datasets: [{
-                    label: 'Sales',
-                    data: [5000, 8000, 12000]
-                }]
-            }
-        });
-    </script>
+<script>
+
+let finalData = [];
+
+document.getElementById('fileInput').addEventListener('change', function(e){
+    const file = e.target.files[0];
+
+    Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+
+            let data = results.data;
+
+            let map = {};
+            data.forEach(row => {
+                map[row["SPIN ID *"]] = row;
+            });
+
+            let homo=0, hetero=0, regular=0;
+
+            data.forEach(row => {
+
+                let s1 = row["SCM_SPIN_1"];
+                let s2 = row["SCM_SPIN_2"];
+                let s3 = row["SCM_SPIN_3"];
+                let s4 = row["SCM_SPIN_4"];
+
+                let spinType = "";
+                let q_uom = "";
+                let packMatch = "";
+                let uniqueCheck = "";
+
+                if(!s1 && !s2 && !s3 && !s4){
+                    spinType = "Regular";
+                    regular++;
+                }
+                else if(s1 && !s2 && !s3 && !s4){
+                    spinType = "Homogenous";
+                    homo++;
+
+                    let base = map[s1];
+
+                    if(base){
+                        let baseQty = parseFloat(base["Quantity *"]);
+                        let multiplier = parseFloat(row["SCM_Qty_1"]);
+
+                        let total = baseQty * multiplier;
+                        q_uom = total + " " + base["UoM *"];
+
+                        if(row["pack_size"] && row["pack_size"].includes(total)){
+                            packMatch = "Yes";
+                        } else {
+                            packMatch = "No";
+                        }
+                    }
+
+                }
+                else{
+                    spinType = "Heterogenous";
+                    hetero++;
+                }
+
+                finalData.push({
+                    item: row["Item Code"],
+                    spinType,
+                    q_uom,
+                    pack: row["pack_size"],
+                    packMatch,
+                    uniqueCheck
+                });
+
+            });
+
+            renderTable();
+            renderChart(homo, hetero, regular);
+        }
+    });
+});
+
+function renderTable(){
+    let tbody = document.querySelector("#outputTable tbody");
+    tbody.innerHTML = "";
+
+    finalData.forEach(r => {
+        let row = `<tr>
+        <td>${r.item}</td>
+        <td>${r.spinType}</td>
+        <td>${r.q_uom}</td>
+        <td>${r.pack}</td>
+        <td>${r.packMatch}</td>
+        <td>${r.uniqueCheck}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+    });
+}
+
+function renderChart(h, he, r){
+    new Chart(document.getElementById('chart'), {
+        type: 'bar',
+        data: {
+            labels: ["Homogenous","Heterogenous","Regular"],
+            datasets: [{
+                label: "Count",
+                data: [h, he, r]
+            }]
+        }
+    });
+}
+
+function downloadCSV(){
+    let csv = "Item,SpinType,Q_UOM,Pack,PackMatch\n";
+    finalData.forEach(r=>{
+        csv += `${r.item},${r.spinType},${r.q_uom},${r.pack},${r.packMatch}\n`;
+    });
+
+    let blob = new Blob([csv], { type: 'text/csv' });
+    let a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = "results.csv";
+    a.click();
+}
+
+</script>
 
 </body>
 </html>
